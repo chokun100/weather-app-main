@@ -5,6 +5,9 @@
   --muted: #9aa3b2;
   --primary: #6aa7ff;
   --border: #1b2246;
+  --scrollbar-track: #1a2247;
+  --scrollbar-thumb: #4c6fff;
+  --scrollbar-thumb-hover: #6aa7ff;
 }
 *{box-sizing:border-box}
 html,body,#root{height:100%}
@@ -57,13 +60,20 @@ body{
 .search__icon img{width:18px;height:18px}
 .search__input{flex:1;width:100%;border:1px solid #2a335b;background:#0e1430;color:#dfe6f5;border-radius:12px;padding:14px 14px 14px 44px;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
 
+/* Suggestions dropdown */
+.suggest-menu{position:absolute;left:0;right:0;top:calc(100% + 8px);background:#2a2f4f;border:1px solid #3a416b;border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.35);padding:6px;z-index:30}
+.suggest-menu__item{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:transparent;border:0;color:#e8ecf7;border-radius:10px;padding:10px 12px;cursor:pointer;text-align:left}
+.suggest-menu__item:hover,.suggest-menu__item.is-active{background:#32375a}
+.suggest__muted{color:#b8c0dc;font-size:.85rem}
+
 .section__title{margin:4px 0 12px;font-size:1rem;color:#c8d0e0}
 .current__metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
 .metric{background:#232949;border:1px solid #2a3158;border-radius:14px;padding:18px;min-height:88px;box-shadow:0 4px 10px rgba(0,0,0,.15)}
 .metric__label{color:var(--muted);font-size:.9rem}
 .metric__value{font-size:1.35rem;margin-top:8px}
 
-.days{display:grid;grid-template-columns:repeat(7,1fr);gap:16px}
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:16px;overflow-x:scroll;overflow-y:hidden;scrollbar-width:none;-ms-overflow-style:none}
+.days::-webkit-scrollbar{display:none}
 .card{background:#232949;border:1px solid #2a3158;border-radius:14px;min-height:84px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 10px rgba(0,0,0,.15)}
 .day{padding:12px;gap:8px;flex-direction:column}
 .day img{width:32px;height:32px}
@@ -101,10 +111,9 @@ body{
 .day-menu{position:absolute;right:0;top:calc(100% + 8px);width:220px;background:#2a2f4f;border:1px solid #3a416b;border-radius:14px;box-shadow:0 16px 40px rgba(0,0,0,.35);padding:8px}
 .day-menu__item{width:100%;text-align:left;background:#32375a;border:1px solid #414a7b;color:#e8ecf7;border-radius:10px;padding:10px 12px;margin:4px 0;cursor:pointer}
 .day-menu__item.is-active{outline:2px solid #5760a0}
-.hours{display:flex;flex-direction:column}
-.hour{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;padding:14px 12px;border-radius:12px}
+.hours{display:flex;flex-direction:column;gap:8px}
+.hour{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:12px;padding:14px 14px;border-radius:12px;background:#232949;border:1px solid #2a3158;box-shadow:0 4px 10px rgba(0,0,0,.15)}
 .hour img{width:22px;height:22px}
-.hour:not(:last-child){border-bottom:1px solid #1a2142}
 .hour__time{color:var(--muted)}
 .hour__temp{font-weight:600;color:#cfd6ea}
 .hour:hover{background:#171d3b}
@@ -112,6 +121,37 @@ body{
 .app__footer{margin-top:28px;color:var(--muted);text-align:center}
 
 .visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* Custom Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 10px;
+  border: 2px solid var(--scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--bg);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
 
 /* FONTS */
 @font-face{
@@ -144,9 +184,6 @@ body{
   .current__metrics{grid-template-columns:repeat(2,1fr)}
   .days{grid-template-columns:repeat(3,1fr)}
   .brand img{height:32px}
-  /* Prevent search input from enforcing a wide min-width under 900px */
-  .search__input--lg{min-width:0;max-width:100%;width:100%}
-  .search__row--center{justify-content:stretch}
 }
 
 /* Tablet: <= 768px */
@@ -158,8 +195,7 @@ body{
   .hero{min-height:200px;border-radius:20px;padding:22px 22px}
   .hero__temp{font-size:2.5rem}
   .current__metrics{grid-template-columns:repeat(2,1fr);gap:12px}
-  /* Use 3 columns to avoid card overflow around 600-768px */
-  .days{grid-template-columns:repeat(3,1fr);gap:12px}
+  .days{grid-template-columns:repeat(4,1fr);gap:12px}
   .card{min-height:72px;border-radius:12px}
   .panel{margin-top:8px}
 }

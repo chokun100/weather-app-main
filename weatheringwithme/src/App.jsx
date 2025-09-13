@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
+import { getWeather, searchCities } from './api.js'
 
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -6,18 +7,34 @@ export default function App() {
   const [windUnit, setWindUnit] = useState('kmh') // 'kmh' | 'mph'
   const [precipUnit, setPrecipUnit] = useState('mm') // 'mm' | 'in'
   const menuRef = useRef(null)
+  const suggestRef = useRef(null)
+  const inputRef = useRef(null)
   const dayRef = useRef(null)
+  const daysRef = useRef(null)
   const [dayOpen, setDayOpen] = useState(false)
   const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
-  const [selectedDay, setSelectedDay] = useState('Tuesday')
+  const [selectedDay, setSelectedDay] = useState(new Date().toLocaleDateString(undefined, { weekday: 'long' }))
+  const [city, setCity] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [data, setData] = useState(null)
+  const [suggestions, setSuggestions] = useState([])
+  const [showSuggest, setShowSuggest] = useState(false)
+  const [highlight, setHighlight] = useState(-1)
+  const defaultCities = useMemo(() => [
+    { id: 'bangkok', name: 'Bangkok', country: 'Thailand' },
+    { id: 'london', name: 'London', country: 'United Kingdom' },
+    { id: 'newyork', name: 'New York', country: 'United States' },
+    { id: 'tokyo', name: 'Tokyo', country: 'Japan' },
+    { id: 'paris', name: 'Paris', country: 'France' },
+  ], [])
   // Sample base data in metric (SI)
-  const tempC = 20
-  const feelsC = 18
-  const windKmh = 14
-  const precipMm = 0
-  const dailyC = [21,21,21,21,21,21,21]
-  const dailyLoC = [15,15,15,15,15,15,15]
-  const hourlyC = Array.from({length:10},()=>20)
+  const tempC = data?.current?.temp_c ?? data?.temperature_c ?? 20
+  const feelsC = data?.current?.feelslike_c ?? data?.feels_like_c ?? 18
+  const windKmh = data?.current?.wind_kph ? Math.round(data.current.wind_kph) : (data?.wind_kmh ?? 14)
+  const precipMm = data?.current?.precip_mm ?? data?.precip_mm ?? 0
+  const dailyC = data?.daily?.map(d => d.max_c) ?? [21,21,21,21,21,21,21]
+  const dailyLoC = data?.daily?.map(d => d.min_c) ?? [15,15,15,15,15,15,15]
+  const hourlyC = data?.hourly?.map(h => h.temp_c) ?? Array.from({length:10},()=>20)
 
   const toF = (c) => Math.round(c * 9/5 + 32)
   const toMph = (kmh) => Math.round(kmh * 0.621371)
@@ -26,15 +43,147 @@ export default function App() {
   const fmtWind = (kmh) => windUnit === 'kmh' ? `${kmh} km/h` : `${toMph(kmh)} mph`
   const fmtPrecip = (mm) => precipUnit === 'mm' ? `${mm} mm` : `${toIn(mm)} in`
 
+  const fmtHour = (iso) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    const hours = d.getHours()
+    const h12 = ((hours + 11) % 12) + 1
+    const ampm = hours < 12 ? 'AM' : 'PM'
+    return `${h12} ${ampm}`
+  }
+
+  // Map Open-Meteo weather codes to icon paths (daytime simplified)
+  const iconForCode = (code) => {
+    switch (code) {
+      case 0: return '/assets/images/icon-sunny.webp' // Clear sky
+      case 1: return '/assets/images/icon-sunny.webp' // Mainly clear
+      case 2: return '/assets/images/icon-partly-cloudy.webp' // Partly cloudy
+      case 3: return '/assets/images/icon-overcast.webp' // Overcast
+      case 45:
+      case 48: return '/assets/images/icon-fog.webp' // Fog
+      case 51:
+      case 53:
+      case 55:
+      case 56:
+      case 57: return '/assets/images/icon-drizzle.webp' // Drizzle
+      case 61:
+      case 63:
+      case 65:
+      case 66:
+      case 67:
+      case 80:
+      case 81:
+      case 82: return '/assets/images/icon-rain.webp' // Rain
+      case 71:
+      case 73:
+      case 75:
+      case 77:
+      case 85:
+      case 86: return '/assets/images/icon-snow.webp' // Snow
+      case 95:
+      case 96:
+      case 99: return '/assets/images/icon-storm.webp' // Thunderstorm
+      default: return '/assets/images/icon-partly-cloudy.webp'
+    }
+  }
+  const currentDateStr = (() => {
+    // Prefer current time from API if present to format a readable date
+    const iso = data?.current?.time || null
+    if (!iso) return 'Tuesday, Aug 8, 2025'
+    const d = new Date(iso)
+    return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })
+  })()
+
+  // Helper to get weekday name from ISO date string
+  const weekdayOf = (iso) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    return d.toLocaleDateString(undefined, { weekday: 'long' })
+  }
+
+  // Hours of the currently selected day from API
+  const hoursForSelectedDay = useMemo(() => {
+    if (!data?.hourly?.length) return []
+    return data.hourly.filter(h => weekdayOf(h.time) === selectedDay)
+  }, [data, selectedDay])
+
+  const onSearch = async () => {
+    if (!city.trim()) return
+    setLoading(true)
+    try {
+      const res = await getWeather(city, { tempUnit, windUnit, precipUnit })
+      setData(res)
+      setShowSuggest(false)
+      setHighlight(-1)
+    } catch (e) {
+      console.error(e)
+      const msg = 'Failed to fetch weather. Check API.'
+      window.alert(msg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Debounced fetch of city suggestions when typing
+  useEffect(() => {
+    let t
+    async function run() {
+      if (!showSuggest) return
+      if (city.trim().length < 2) {
+        setSuggestions(defaultCities)
+        return
+      }
+      try {
+        const list = await searchCities(city.trim(), 6)
+        setSuggestions(list.length ? list : defaultCities)
+      } catch {
+        setSuggestions(defaultCities)
+      }
+    }
+    t = setTimeout(run, 250)
+    return () => clearTimeout(t)
+  }, [city, showSuggest, defaultCities])
+
+  const onFocusInput = () => {
+    setShowSuggest(true)
+    setHighlight(-1)
+    if (city.trim().length < 2) setSuggestions(defaultCities)
+  }
+
+  const onSelectCity = (name) => {
+    setCity(name)
+    setShowSuggest(false)
+    setHighlight(-1)
+    onSearch()
+  }
+
   useEffect(() => {
     const onDocClick = (e) => {
       if (!menuRef.current) return
       if (menuRef.current.contains(e.target)) return
       setMenuOpen(false)
       if (dayRef.current && !dayRef.current.contains(e.target)) setDayOpen(false)
+      if (suggestRef.current && !suggestRef.current.contains(e.target) && inputRef.current && !inputRef.current.contains(e.target)) {
+        setShowSuggest(false)
+        setHighlight(-1)
+      }
     }
     document.addEventListener('click', onDocClick)
     return () => document.removeEventListener('click', onDocClick)
+  }, [])
+
+  // Enable horizontal scroll with mouse wheel without needing to click first
+  useEffect(() => {
+    const el = daysRef.current
+    if (!el) return
+    const onWheel = (e) => {
+      // Only handle vertical wheel deltas; allow shift+wheel native behavior
+      if (e.deltaY === 0) return
+      e.preventDefault()
+      el.scrollLeft += e.deltaY
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
   }, [])
 
   const switchTo = (system) => {
@@ -110,16 +259,58 @@ export default function App() {
               <span className="search__icon" aria-hidden="true">
                 <img src="/assets/images/icon-search.svg" alt="" />
               </span>
-              <input id="city" className="search__input search__input--lg" placeholder="Search for a place..." />
+              <input
+                id="city"
+                ref={inputRef}
+                className="search__input search__input--lg"
+                placeholder="Search for a place..."
+                value={city}
+                onChange={(e)=>{ setCity(e.target.value); setShowSuggest(true) }}
+                onFocus={onFocusInput}
+                onKeyDown={(e)=>{
+                  if(e.key==='Enter'){
+                    if (showSuggest && highlight >= 0 && suggestions[highlight]) {
+                      onSelectCity(suggestions[highlight].name)
+                    } else {
+                      onSearch()
+                    }
+                  } else if (e.key==='ArrowDown') {
+                    e.preventDefault(); setShowSuggest(true); setHighlight(h=>Math.min((h<0?-1:h)+1, (suggestions.length-1)))
+                  } else if (e.key==='ArrowUp') {
+                    e.preventDefault(); setHighlight(h=>Math.max(h-1, -1))
+                  } else if (e.key==='Escape') {
+                    setShowSuggest(false); setHighlight(-1)
+                  }
+                }}
+              />
+              {showSuggest && (
+                <div className="suggest-menu" ref={suggestRef} role="listbox" aria-label="City suggestions">
+                  {(suggestions.length? suggestions : defaultCities).map((s, i) => (
+                    <button
+                      key={s.id || s.name+String(i)}
+                      className={`suggest-menu__item ${i===highlight? 'is-active' : ''}`}
+                      onMouseEnter={() => setHighlight(i)}
+                      onMouseLeave={() => setHighlight(-1)}
+                      onClick={() => onSelectCity(s.name)}
+                      role="option"
+                      aria-selected={i===highlight}
+                    >
+                      <span>{s.name}</span>
+                      <span className="suggest__muted">{s.admin1 ? `${s.admin1}, ` : ''}{s.country || ''}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            <button className="btn btn--primary btn--search">Search</button>
+            <button className="btn btn--primary btn--search" onClick={onSearch}>{loading ? 'Loading...' : 'Search'}</button>
           </div>
         </div>
+        {/* Errors are shown via native alert() per request */}
         <div className="col col--left">
           <section className="hero">
             <div className="hero__content">
-              <div className="hero__place">Berlin, Germany</div>
-              <div className="hero__date">Tuesday, Aug 8, 2025</div>
+              <div className="hero__place">{data?.location?.name || 'Berlin, Germany'}</div>
+              <div className="hero__date">{currentDateStr}</div>
             </div>
             <div className="hero__meta">
               <img className="hero__icon" src="/assets/images/icon-sunny.webp" alt="Sunny" />
@@ -139,7 +330,7 @@ export default function App() {
 
           <section className="forecast">
             <h2 className="section__title">Daily forecast</h2>
-            <div className="days">
+            <div className="days" ref={daysRef}>
               {Array.from({ length: 7 }).map((_, i) => (
                 <div key={i} className="day card">
                   <div className="day__label">{['Tue','Wed','Thu','Fri','Sat','Sun','Mon'][i]}</div>
@@ -172,11 +363,14 @@ export default function App() {
               )}
             </div>
             <div className="hours">
-              {Array.from({ length: 10 }).map((_, i) => (
+              {(hoursForSelectedDay.length
+                ? hoursForSelectedDay
+                : Array.from({ length: 10 }).map((_, i) => ({ time: null, temp_c: hourlyC[i], code: 2 }))
+              ).map((h, i) => (
                 <div key={i} className="hour">
-                  <span className="hour__time">{i + 3} PM</span>
-                  <img src="/assets/images/icon-partly-cloudy.webp" alt="" />
-                  <span className="hour__temp">{fmtTemp(hourlyC[i])}</span>
+                  <span className="hour__time">{fmtHour(h.time) || `${i + 3} PM`}</span>
+                  <img src={iconForCode(h.code)} alt="" />
+                  <span className="hour__temp">{fmtTemp(h.temp_c)}</span>
                 </div>
               ))}
             </div>
